@@ -6,6 +6,7 @@ build/
 !.env.example
 data/
 .DS_Store
+.claude/settings.json
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
