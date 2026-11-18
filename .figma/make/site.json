@@ -1,0 +1,10 @@
+{
+  "description": "企業の理念を背景画像と中央のメッセージで印象的に伝え、会社の魅力を訪問者に届ける企業ホームページ。",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

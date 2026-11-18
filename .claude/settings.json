@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E 'DS_Store|data/|\\\\.env$|node_modules')",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
