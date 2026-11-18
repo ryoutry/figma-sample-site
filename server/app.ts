@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -68,9 +68,30 @@ async function readJson(req: { json: () => Promise<unknown> }): Promise<Body> {
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Body) : {};
 }
 
-export function createApp(db: DatabaseSync, options: { adminPassword?: string }) {
-  // セッションはメモリ保持（サーバー再起動で全員ログアウト）
-  const sessions = new Map<string, number>();
+export function createApp(
+  db: DatabaseSync,
+  options: {
+    adminPassword?: string;
+    /** 接続元 IP を読むヘッダー名。Vercel のようにプロキシが付けるヘッダーを信頼できる環境だけで指定する */
+    clientIpHeader?: string;
+  },
+) {
+  // ログイン状態は「有効期限.署名」の Cookie で持ち、サーバーには保存しない。
+  // サーバーレスで複数のインスタンスが動いても同じ判定になる。
+  // 鍵はパスワードから作るので、パスワードを変えると既存のログインはすべて無効になる。
+  const sessionKey = sha256(`aona-session:${options.adminPassword ?? ""}`);
+  const sign = (expires: string) => createHmac("sha256", sessionKey).update(expires).digest();
+  const isValidSession = (token: string | undefined) => {
+    const [expires, signature] = token?.split(".") ?? [];
+    if (!expires || !signature || !options.adminPassword) return false;
+    const given = Buffer.from(signature, "hex");
+    const expected = sign(expires);
+    return (
+      given.length === expected.length &&
+      timingSafeEqual(given, expected) &&
+      Number(expires) > Date.now()
+    );
+  };
   // IP ごとの送信時刻（メモリ保持。再起動でリセット）
   const contactLog = new Map<string, number[]>();
   const app = new Hono<{ Bindings: { incoming?: IncomingMessage } }>().basePath("/api");
@@ -78,7 +99,10 @@ export function createApp(db: DatabaseSync, options: { adminPassword?: string })
   // ---- 公開API ----
 
   app.post("/contact", async (c) => {
-    const ip = c.env?.incoming?.socket.remoteAddress ?? "unknown";
+    const ip =
+      (options.clientIpHeader && c.req.header(options.clientIpHeader)) ||
+      c.env?.incoming?.socket.remoteAddress ||
+      "unknown";
     const now = Date.now();
     if (contactLog.size > 1000) {
       for (const [key, times] of contactLog)
@@ -129,31 +153,26 @@ export function createApp(db: DatabaseSync, options: { adminPassword?: string })
     const password = str((await readJson(c.req)).password);
     if (!timingSafeEqual(sha256(password), sha256(options.adminPassword)))
       return c.json({ error: "パスワードが違います" }, 401);
-    const token = randomBytes(32).toString("hex");
-    sessions.set(token, Date.now() + SESSION_TTL_MS);
-    setCookie(c, SESSION_COOKIE, token, {
+    const expires = String(Date.now() + SESSION_TTL_MS);
+    setCookie(c, SESSION_COOKIE, `${expires}.${sign(expires).toString("hex")}`, {
       httpOnly: true,
       sameSite: "Strict",
       path: "/api/admin",
       maxAge: SESSION_TTL_MS / 1000,
-      secure: new URL(c.req.url).protocol === "https:",
+      secure:
+        new URL(c.req.url).protocol === "https:" || c.req.header("x-forwarded-proto") === "https",
     });
     return c.json({ ok: true });
   });
 
   const requireAdmin: MiddlewareHandler = async (c, next) => {
-    const token = getCookie(c, SESSION_COOKIE);
-    const expires = token ? sessions.get(token) : undefined;
-    if (!token || !expires || expires < Date.now()) {
-      if (token) sessions.delete(token);
+    if (!isValidSession(getCookie(c, SESSION_COOKIE)))
       return c.json({ error: "ログインが必要です" }, 401);
-    }
     await next();
   };
 
+  // サーバーに状態を持たないため、ログアウトはブラウザの Cookie を消すことで行う
   app.post("/admin/logout", (c) => {
-    const token = getCookie(c, SESSION_COOKIE);
-    if (token) sessions.delete(token);
     deleteCookie(c, SESSION_COOKIE, { path: "/api/admin" });
     return c.json({ ok: true });
   });

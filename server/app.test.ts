@@ -91,6 +91,18 @@ describe("POST /api/contact", () => {
     assert.equal(other.status, 201);
   });
 
+  test("clientIpHeader を指定すると、そのヘッダーの IP で回数を数える", async () => {
+    const proxied = createApp(openDb(":memory:"), { clientIpHeader: "x-real-ip" });
+    const send = (ip: string) =>
+      proxied.request("/api/contact", {
+        ...json("POST", validInquiry),
+        headers: { "Content-Type": "application/json", "x-real-ip": ip },
+      });
+    for (let i = 0; i < 5; i++) assert.equal((await send("4.4.4.4")).status, 201);
+    assert.equal((await send("4.4.4.4")).status, 429);
+    assert.equal((await send("5.5.5.5")).status, 201);
+  });
+
   test("入力エラーの送信は回数に数えない", async () => {
     const from = { incoming: { socket: { remoteAddress: "3.3.3.3" } } };
     for (let i = 0; i < 6; i++)
@@ -145,11 +157,39 @@ describe("管理API", () => {
     assert.equal(res2.status, 503);
   });
 
-  test("ログアウト後はセッションが無効になる", async () => {
+  const me = (cookie: string, target = app) =>
+    target.request("/api/admin/me", { headers: { Cookie: cookie } });
+
+  test("ログアウトでブラウザの Cookie を削除させる", async () => {
     const cookie = await login();
-    assert.equal((await app.request("/api/admin/me", { headers: { Cookie: cookie } })).status, 200);
-    await app.request("/api/admin/logout", { method: "POST", headers: { Cookie: cookie } });
-    assert.equal((await app.request("/api/admin/me", { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await me(cookie)).status, 200);
+    const res = await app.request("/api/admin/logout", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    assert.match(res.headers.get("set-cookie")!, /aona_admin=;.*Max-Age=0/);
+  });
+
+  test("ログイン状態はサーバーに保存しないので、別のインスタンスでも有効", async () => {
+    const cookie = await login();
+    const other = createApp(openDb(":memory:"), { adminPassword: PASSWORD });
+    assert.equal((await me(cookie, other)).status, 200);
+  });
+
+  test("改ざんした Cookie と、パスワード変更前の Cookie は 401", async () => {
+    const cookie = await login();
+    const [name, value] = cookie.split("=");
+    const [expires, signature] = value.split(".");
+    const extended = `${name}=${Number(expires) + 1e9}.${signature}`;
+    assert.equal((await me(extended)).status, 401);
+    const changed = createApp(openDb(":memory:"), { adminPassword: "new-password" });
+    assert.equal((await me(cookie, changed)).status, 401);
+  });
+
+  test("8時間を過ぎた Cookie は 401", async (t) => {
+    const cookie = await login();
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 8 * 60 * 60 * 1000 + 1 });
+    assert.equal((await me(cookie)).status, 401);
   });
 
   test("ニュースを登録・更新・削除でき、公開APIに反映される", async () => {
