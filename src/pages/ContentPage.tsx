@@ -494,7 +494,7 @@ function ContactPage() {
           </p>
           <div className="mt-10 border-t border-[#183027]/15 pt-6">
             <p className="text-[10px] uppercase tracking-widest text-[#183027]/40">Email</p>
-            <p className="mt-2 text-sm">hello@aona.jp</p>
+            <p className="mt-2 text-sm">hello@example.com</p>
             <p className="mt-7 text-[10px] uppercase tracking-widest text-[#183027]/40">
               Office Hours
             </p>
@@ -597,7 +597,7 @@ function PrivacyPage() {
           ],
           [
             "3. お問い合わせ窓口",
-            "個人情報に関するお問い合わせは、hello@aona.jp までご連絡ください。",
+            "個人情報に関するお問い合わせは、hello@example.com までご連絡ください。",
           ],
         ].map((p) => (
           <div key={p[0]}>

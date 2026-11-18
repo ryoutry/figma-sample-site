@@ -172,6 +172,10 @@ export default function SiteLayout({
               ))}
             </div>
           </div>
+          <p className="pt-7 text-[11px] leading-6 tracking-wider text-white/55">
+            このサイトは架空の企業を題材にしたサンプルです。掲載している企業情報・実績・人物・受賞歴などはすべて架空のものです。写真は
+            Unsplash の素材で、実際の撮影地や被写体は説明とは関係ありません。
+          </p>
           <div className="flex flex-col gap-4 pt-7 text-[10px] tracking-wider text-white/40 sm:flex-row sm:items-center sm:justify-between">
             <p>© 2025 AONA Inc.</p>
             <div className="flex gap-6">
